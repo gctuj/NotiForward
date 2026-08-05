@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 微信消息记录自动清理
-- messages/ analysis/ qq_messages/：删除超过保留天数（默认 7 天）的文件
+- messages/ analysis/：删除超过保留天数（默认 7 天）的文件
 - *.log 调试日志：只保留最近 N 个（默认 5）
 - .analysis_cache.json：同步清理过期日期的分类缓存条目
 用法:
@@ -49,7 +49,7 @@ def main():
     removed_files, kept_files = [], []
 
     # 1) 消息 / 分析 / QQ 消息 文件（按文件名前 10 位日期判断）
-    for d in ("messages", "analysis", "qq_messages"):
+    for d in ("messages", "analysis"):
         full = os.path.join(BASE, d)
         if not os.path.isdir(full):
             continue
