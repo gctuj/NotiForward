@@ -15,6 +15,16 @@
 
 </div>
 
+## 🔍 这个项目叫什么？常见叫法 / 搜索关键词
+
+有类似想法的人可能会用各种说法找它——下面这些都指向本项目：
+
+**中文叫法**：微信消息监控、微信通知转发、微信消息同步到电脑、微信消息推送到 PC、微信工作消息提醒、微信消息电脑查看、微信群消息转发、微信消息机器人、微信自动提醒、微信消息推送
+
+**英文叫法**：wechat monitor、wechat notification forwarding、wechat to pc、forward wechat messages to computer、android notification mirror、notification forwarder、wechat notifier、wechat message sync、notification to desktop
+
+**一句话定位**：想高效率获取微信工作消息、又怕封号的人的**绿色方案**——只读通知栏，不 Hook 不 Root，AI 自动分类。
+
 ## 📚 文档导航
 
 | 文档 | 说明 |
