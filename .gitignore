@@ -1,0 +1,53 @@
+# ===== Android / Gradle 构建产物 =====
+*.iml
+.gradle/
+build/
+app/build/
+/captures
+.externalNativeBuild
+.cxx
+.idea/
+local.properties
+gradle-home4/
+.gradle-home4/
+nf-build/
+
+# ===== 运行数据（含隐私聊天记录，勿上传）=====
+messages/
+analysis/
+qq_messages/
+state/
+*.log
+.analysis_cache.json
+.cache.json
+.classified_count
+.last_msg_id
+.progress
+qq_chat_history.json
+
+# ===== 密钥与本地配置（勿上传）=====
+config.local.json
+*.secret
+
+# ===== 敏感脚本（QQ 桥，含 bot 凭据与用户 openid，不公开）=====
+qq_receiver*.py
+
+# ===== Python =====
+__pycache__/
+*.pyc
+
+# ===== 本地测试/迁移遗留文件 =====
+lock_test*.py
+lock_test*.txt
+migrate*.py
+migrate*.txt
+live_*test*.py
+classifier_env_test.py
+test_write_perm.py
+test_del*.txt
+proc_*.txt
+defender_log.txt
+check_procs.py
+
+# ===== 其它 =====
+.DS_Store

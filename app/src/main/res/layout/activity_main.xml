@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="24dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="NotiForward"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="微信通知转发到电脑"
+            android:textSize="14sp"
+            android:alpha="0.6"
+            android:layout_marginBottom="24dp" />
+
+        <TextView
+            android:id="@+id/txtStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="状态: 检查中..."
+            android:textSize="16sp"
+            android:layout_marginBottom="12dp" />
+
+        <Button
+            android:id="@+id/btnToggleAccess"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="开启通知权限"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="ntfy.sh 频道名"
+            android:textSize="14sp"
+            android:layout_marginBottom="4dp" />
+
+        <EditText
+            android:id="@+id/editTopic"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="my-secret-topic"
+            android:inputType="text"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="包名过滤 (留空=微信，支持逗号分隔)"
+            android:textSize="14sp"
+            android:layout_marginBottom="4dp" />
+
+        <EditText
+            android:id="@+id/editPackageFilter"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="com.tencent.mm,com.tencent.mobileqq"
+            android:inputType="text"
+            android:layout_marginBottom="12dp" />
+
+        <Switch
+            android:id="@+id/switchWeChatOnly"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="仅转发微信"
+            android:checked="true"
+            android:layout_marginBottom="16dp" />
+
+        <Button
+            android:id="@+id/btnBlockList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="屏蔽群管理"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/txtQueue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="待补发: 0 条"
+            android:textSize="14sp"
+            android:layout_marginBottom="16dp" />
+
+        <Button
+            android:id="@+id/btnBatteryOptimize"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="设置电池优化（防被杀后台）"
+            android:layout_marginBottom="16dp" />
+
+        <Button
+            android:id="@+id/btnTest"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="发送测试消息"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="日志"
+            android:textSize="14sp"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:id="@+id/txtLog"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:background="#F0F0F0"
+            android:padding="8dp"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:scrollbars="vertical" />
+
+    </LinearLayout>
+</ScrollView>
