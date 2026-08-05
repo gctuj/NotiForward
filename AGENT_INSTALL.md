@@ -1,118 +1,106 @@
-# AGENT_INSTALL.md — 安装说明（给 AI 助手看）
+# AGENT_INSTALL.md — AI 助手安装引导剧本
 
-> 本文件写给任何 AI 助手（Agent）。用户把这份文档丢给你，就是让你**照着把 NotiForward 装好并跑通**。
-> 你可以直接执行下面的命令；遇到"需要用户决定"的步骤，向用户确认即可。
+> 你是安装引导员。本文件不是让你把内容一次性读给主人，而是**按阶段一步一步引导**：
+> 每个阶段完成并确认后，再进入下一阶段。每步先告诉主人"要做什么、需要你提供什么"。
+> 主人是普通用户，不懂代码——你把命令跑完，只让主人做手机上的简单操作。
 
-## 项目是什么
+---
 
-NotiForward = Android App（监听微信通知转发到 ntfy.sh）+ PC 端脚本（接收 + AI 分类）。
-目标机器：一台 Windows 电脑（跑接收/分类）+ 一台 Android 手机（转发通知）。
+## 开始前：告诉主人需要准备的东西
 
-## 0. 前置检查
+> 给主人说："装 NotiForward 大约需要 15 分钟。请准备：① 一台 Windows/Mac/Linux 电脑 ② 一部 Android 7.0+ 手机（建议是日常用的那台，因为要监听它的微信通知）③ （可选）一个 DeepSeek API Key，用于 AI 分类，没有也能装，只是分类功能用不了。"
+
+**主人需要提供的清单（全程）**：电脑 + Android 手机 + DeepSeek Key（可选）+ 大约 15 分钟。
+
+---
+
+## 阶段 1：电脑端安装（你独立完成，需要主人提供 Key）
+
+你执行（无需主人动手）：
 
 ```bash
-python --version        # 需要 3.10+（本仓库 PC 端仅用标准库，无 pip 依赖）
-```
+# 1. 检查 Python（需 3.10+）
+python --version
+# 没有的话：引导主人去 https://www.python.org/downloads/ 安装，勾选 Add to PATH
 
-Windows 用户如果没装 Python：https://www.python.org/downloads/ 装 3.10+，安装时勾选 "Add to PATH"。
-
-## 1. 获取代码
-
-```bash
+# 2. 获取代码
 git clone https://github.com/gctuj/NotiForward.git
 cd NotiForward
+
+# 3. 配置 DeepSeek Key（二选一，向主人索要）
+#    环境变量：set DEEPSEEK_API_KEY=你的key
+#    或创建 config.local.json（推荐）：{"deepseek_api_key": "你的key"}
+
+# 4. 启动接收器（先只启动接收器，分类器等频道配通后再开）
+python ntfy_receiver.py
 ```
 
-（没有 git 就下载 ZIP 解压：仓库页面 → Code → Download ZIP）
+> 主人要做的事：只有"提供 DeepSeek Key"（没有就跳过）。
+> 你确认：终端出现 `轮询 ntfy.sh (since=...)` = 接收器正常。**保持这个终端开着，不要关。**
 
-## 2. 配置 AI Key（分类用，必配否则分类器会警告但不影响接收）
+---
 
-二选一：
+## 阶段 2：手机端安装（主人动手，你引导确认）
+
+告诉主人："现在装手机端，跟着我的指引做，每步做完告诉我结果。"
+
+| 步 | 主人操作 | 你确认 |
+|---|---|---|
+| 1 | 构建 APK 或从 Release 下载 APK 文件 | 帮主人把 APK 弄到手机（可 `adb install -r` 若 USB 连接） |
+| 2 | 手机上安装 APK | 确认安装完成 |
+| 3 | 打开 App → 点「开启通知权限」→ 系统设置授予通知使用权 | 确认已授权（提示：部分手机需重启后才生效） |
+| 4 | 回到 App → 点「设置电池优化」→ 加入白名单 | 确认完成 |
+| 5 | 看 App 主界面，找到**频道号（ntfy topic）** | **让主人念给你，记下来**（形如 notiforward-xxxxxx） |
+
+> ⚠️ 第 5 步的频道号是本阶段唯一必须拿到的产出，没有它两端连不通。
+
+---
+
+## 阶段 3：频道配置（主人提供频道号，你配置电脑端）
+
+拿到主人的频道号后，你执行：
 
 ```bash
-# 方式 A：环境变量
-export DEEPSEEK_API_KEY="用户提供的 key"     # Windows: set DEEPSEEK_API_KEY=...
-
-# 方式 B：本地配置文件（推荐，Windows 友好）
-# 在项目根目录创建 config.local.json：
-# {"deepseek_api_key": "用户提供的 key"}
+# 编辑 ntfy_receiver.py 顶部，把 NTFY_TOPIC 改成主人的频道号
+# 例如：NTFY_TOPIC = "notiforward-xxxxxx"
 ```
 
-> ⚠️ `config.local.json` 已在 .gitignore 中，不会上传。key 向用户索取（DeepSeek 开放平台申请）。
+然后**重启接收器**（关掉阶段 1 的终端，重新 `python ntfy_receiver.py`），确认打印的 Topic 与频道号一致。
 
-## 3. 启动 PC 端（接收器 + 分类器）
+> 主人做的事：无。你确认：接收器启动日志里的 Topic = 主人的频道号。
 
-```bash
-# 方式 A（推荐，Windows）：一键启动器，关窗即停
-python collector_launcher.py
+---
 
-# 方式 B：分开跑（更直观）
-python ntfy_receiver.py          # 终端 1：接收器（长轮询，断点续传）
-python classify_messages.py --watch   # 终端 2：分类器（监听新消息自动分类）
-```
+## 阶段 4：联通验证（主人点测试，你确认）
 
-验证：终端出现 `轮询 ntfy.sh (since=...)` 即接收器正常；`智能分类监听启动` 即分类器正常。
+告诉主人："现在验证。打开手机 App，点『发送测试消息』。"
 
-> ⚠️ 接收器/分类器都有单实例锁（端口 8899/8897），重复启动会被拒绝——这是正常的。
-> Windows 中文乱码时：`set PYTHONIOENCODING=utf-8` 后再运行。
+- 你确认：接收器终端打印出该测试消息（测试消息只打印、不存文件，正常）
+- 再让主人用微信收一条真实消息（比如让朋友发一条）
+- 你确认：`messages/` 目录出现当天日期的新文件，且内容包含那条消息
+- 通过后：启动分类器 `python classify_messages.py --watch`，确认打印"智能分类监听启动"
 
-## 4. 手机端 App
+> 全部通过，告诉主人："装好了！"
 
-### 4.1 获取 APK
+---
 
-```bash
-# 方式 A：项目内一键构建（Windows，需要 JDK 17 + Android SDK）
-powershell -ExecutionPolicy Bypass -File build_apk.ps1
-# 产物在脚本配置的输出路径（默认 Claw\NotiForward.apk）
+## 阶段 5：告诉主人以后怎么用
 
-# 方式 B：Android Studio 打开 app/ 目录 Run
-# 方式 C：如果仓库有 Release，直接下载现成 APK
-```
+> 给主人说：
+> "以后你不用碰电脑，随时在手机上问我：
+> - 『今天微信有什么重要消息？』→ 我读 analysis 目录汇总给你
+> - 『屏蔽某个群』→ 我告诉你在哪改
+> - 『收不到消息了』→ 我帮你排查
+> 注意：电脑要保持开机，接收器的窗口别关。手机上如果通知栏的『NotiForward 运行中』消失了，打开 App 点一下就能恢复。"
 
-### 4.2 安装与授权（必须按顺序）
+---
 
-1. APK 传到手机安装（QQ/微信文件助手、USB、或 `adb install -r`）
-   - ⚠️ 升级请**覆盖安装**，不要卸载重装（卸载会清掉 ntfy topic 配置）
-2. 打开 App → 点「开启通知权限」→ 系统设置授予 NotiForward「通知使用权」
-   - 部分国产 ROM（ColorOS/OriginOS）需**重启手机**才生效
-3. 点「设置电池优化」加入白名单（防后台被杀，否则收不到）
-4. 通知栏出现"NotiForward 运行中"常驻通知 = 服务活着
+## 排障速查（主人说"收不到"时你查）
 
-### 4.3 频道（topic）配置——手机和电脑必须指向同一个（关键）
-
-App 首次打开会自动生成一个**频道号**（ntfy topic），形如 `notiforward-xxxxxx`。手机把消息发到这个频道，PC 从这个频道收——**两端必须一致**，否则收不到。
-
-Agent 按以下步骤完成首次配置：
-
-1. 让用户打开手机 App 主界面，读出频道号（形如 `notiforward-xxxxxx`），你记录下来
-2. 编辑 PC 端 `ntfy_receiver.py` 顶部，把 `NTFY_TOPIC` 改成该频道号：
-   ```python
-   NTFY_TOPIC = "notiforward-xxxxxx"   # 与 App 主界面显示的一致
-   ```
-3. 重启接收器（杀掉旧进程重新 `python ntfy_receiver.py`，或用启动器整体重启）
-4. 验证：让用户在 App 点「发送测试消息」，接收器终端应打印该消息；再让手机收到一条真实微信通知，`messages/` 下应出现新记录
-
-> 若用户改过 App 里的频道号（如重装 App 导致频道变化），重复上述 1-4 步即可。
-
-## 5. 端到端验证
-
-1. 手机 App 点「发送测试消息」→ PC 接收器终端应打印该消息（测试消息不落盘，只打印）
-2. 手机微信收到一条真实通知 → PC 端 `messages/YYYY-MM-DD.jsonl` 出现新记录、`analysis/YYYY-MM-DD.md` 更新
-3. 全部通过 = 安装完成 ✅
-
-## 6. 常见问题（Agent 排查用）
-
-| 症状 | 排查 |
+| 症状 | 排查顺序 |
 |---|---|
-| 手机收不到/PC 没消息 | ① 通知栏有无"NotiForward 运行中"（无=后台被杀，打开 App 恢复）② PC 接收器是否在跑 ③ 通知使用权是否被 ROM 重置 |
-| 接收器反复"连接断开" | 网络问题，10 秒后自动重连，无需处理 |
-| "被限流，60秒后重试" | ntfy.sh 免费版 429，约 1 小时自动解除 |
-| 分类器报"未配置 API Key" | 见第 2 步配置 DEEPSEEK_API_KEY |
-| 中文乱码 | Windows：`set PYTHONIOENCODING=utf-8` |
-
-## 7. 定期维护（可选）
-
-```bash
-# 清理超过 7 天的记录（建议配合系统计划任务每 2 天跑一次）
-python cleanup_old_records.py --keep-days 7 --keep-logs 5
-```
+| 收不到消息 | ① 手机通知栏有无"NotiForward 运行中"（无 → 让主人打开 App）② PC 接收器终端是否还开着 ③ 手机通知使用权是否还在 |
+| 接收器反复"连接断开" | 网络问题，10 秒自动重连，无需处理 |
+| "被限流，60秒后重试" | ntfy.sh 免费版限流，约 1 小时自动解除 |
+| 分类器报"未配置 API Key" | 见阶段 1 第 3 步 |
+| 中文乱码 | Windows 终端执行：`set PYTHONIOENCODING=utf-8` 后重跑 |
