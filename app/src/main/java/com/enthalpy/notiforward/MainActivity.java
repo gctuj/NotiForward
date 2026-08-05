@@ -11,6 +11,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.provider.Settings;
 import android.text.method.ScrollingMovementMethod;
 import android.widget.Button;
@@ -148,9 +149,23 @@ public class MainActivity extends Activity {
         boolean enabled = isNotificationListenerEnabled();
         txtStatus.setText(enabled ? "状态: 运行中" : "状态: 未开启通知权限");
         btnToggleAccess.setText(enabled ? "已开启 (点击检查)" : "开启通知权限");
+        // 电池优化状态（吸收 ItsAzni 状态卡：一眼看出是否会被系统杀后台）
+        String battery = "电池优化: 白名单";
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) {
+                battery = "电池优化: 未加入白名单（可能被杀后台）";
+            }
+        }
         // 队列待补发状态
         int q = queueManager.size();
-        txtQueue.setText(q > 0 ? "待补发: " + q + " 条（网络恢复后自动补发）" : "待补发: 0 条");
+        String queueState;
+        if (q > 0) {
+            queueState = "待补发: " + q + " 条（指数退避自动补发）";
+        } else {
+            queueState = "待补发: 0 条";
+        }
+        txtQueue.setText(battery + "\n" + queueState);
     }
 
     public void appendLog(String msg) {

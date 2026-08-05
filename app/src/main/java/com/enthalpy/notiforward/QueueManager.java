@@ -22,6 +22,11 @@ public class QueueManager {
 
     private final SharedPreferences prefs;
 
+    /** 队列项唯一 id 生成器：enqueue 与 flush 合并时用 id 判断"是否快照后新入队"，
+     *  避免用时间戳比较在极端（同毫秒入队）情况下丢失新条目 */
+    private static final java.util.concurrent.atomic.AtomicLong SEQ =
+            new java.util.concurrent.atomic.AtomicLong(System.nanoTime());
+
     public QueueManager(Context context) {
         prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
@@ -37,10 +42,12 @@ public class QueueManager {
         JSONArray queue = getQueue();
         JSONObject item = new JSONObject();
         try {
+            item.put("id", SEQ.incrementAndGet());
             item.put("topic", topic);
             item.put("payload", payload);
             item.put("retry", 0);
             item.put("time", System.currentTimeMillis());
+            item.put("next_retry_at", System.currentTimeMillis()); // 立即可发（首次尝试）
         } catch (Exception ignored) {
         }
         queue.put(item);
@@ -49,6 +56,12 @@ public class QueueManager {
             queue.remove(0);
         }
         prefs.edit().putString(KEY_QUEUE, queue.toString()).commit();
+    }
+
+    /** 指数退避间隔：60s * 2^min(retry,5)，封顶 32 分钟（吸收 ItsAzni 的 DB 层退避思路）。
+     *  比固定 60s 全量重试省电：断网时重试间隔逐次拉长，不空耗电。 */
+    private static long backoffMillis(int retry) {
+        return 60_000L << Math.min(retry, 5);
     }
 
     /** 尝试补发队列中所有消息；成功移除，失败 retry+1，只有超过重试上限才丢弃。返回成功发送条数。
@@ -60,21 +73,29 @@ public class QueueManager {
         synchronized (this) {
             snapshot = getQueue();
         }
-        // 记录快照的最大入队时间，用于合并快照期间新入队的条目
+        // 记录快照的最大入队时间与全部 id，用于合并快照期间并发新入队的条目
         long snapshotMaxTime = 0;
+        java.util.Set<Long> snapshotIds = new java.util.HashSet<>();
         for (int i = 0; i < snapshot.length(); i++) {
             JSONObject it = snapshot.optJSONObject(i);
             if (it != null) {
                 snapshotMaxTime = Math.max(snapshotMaxTime, it.optLong("time", 0));
+                snapshotIds.add(it.optLong("id", 0));
             }
         }
 
         // ===== 锁外发送（网络 I/O 不占锁，主线程不再被拖住） =====
         JSONArray remaining = new JSONArray();
         int sent = 0;
+        long now = System.currentTimeMillis();
         for (int i = 0; i < snapshot.length(); i++) {
             JSONObject item = snapshot.optJSONObject(i);
             if (item == null) continue;
+            // 未到退避时间的条目原样保留，不重试不计数（省电，断网时不空耗）
+            if (now < item.optLong("next_retry_at", 0)) {
+                remaining.put(item);
+                continue;
+            }
             try {
                 String topic = item.getString("topic");
                 String payload = item.getString("payload");
@@ -94,6 +115,7 @@ public class QueueManager {
                     continue;
                 }
                 item.put("retry", retry);
+                item.put("next_retry_at", now + backoffMillis(retry)); // 指数退避，下次到期才再试
                 remaining.put(item);
             } catch (Exception ignored) {
                 // 单条数据损坏：保留并降级为重试计数，避免静默丢失
@@ -101,6 +123,7 @@ public class QueueManager {
                     int retry = item.optInt("retry", 0) + 1;
                     if (retry < MAX_RETRY) {
                         item.put("retry", retry);
+                        item.put("next_retry_at", now + backoffMillis(retry));
                         remaining.put(item);
                     }
                 } catch (Exception e2) {
@@ -111,11 +134,13 @@ public class QueueManager {
         }
 
         synchronized (this) {
-            // 合并快照期间新入队的条目（入队时间大于快照最大时间），避免被覆盖丢失
+            // 合并快照期间并发新入队的条目（用唯一 id 判断，避免时间戳同毫秒竞态丢消息）
             JSONArray current = getQueue();
             for (int i = 0; i < current.length(); i++) {
                 JSONObject it = current.optJSONObject(i);
-                if (it != null && it.optLong("time", 0) > snapshotMaxTime) {
+                if (it != null
+                        && it.optLong("time", 0) >= snapshotMaxTime
+                        && !snapshotIds.contains(it.optLong("id", 0))) {
                     remaining.put(it);
                 }
             }

@@ -128,6 +128,17 @@ python collector_launcher.py          # 或分别跑 ntfy_receiver.py + classify
 5. **P2**：GitHub Actions CI（跑 unittest）
 6. **P2**：`collector_launcher.py` 增加子进程崩溃自动拉起
 
+## 9.5 同类轮子吸收记录（2026-08-05）
+
+对比调研（SmsForwarder 27.4k⭐ / ItsAzni/NotificationForwarder / BennoGAP 均深入读码）后已吸收：
+- **断线自动重绑**：`onListenerDisconnected` → `NotificationListenerService.requestRebind(ComponentName)`（注意：无参实例版在新 SDK 已移除，必须静态带参）
+- **跳过分组汇总通知**：`FLAG_GROUP_SUMMARY`
+- **黑名单正则**：`/正则/` 显式语法，非法降级去斜杠 contains + 记日志（原降级实现静默失效是 bug）
+- **队列指数退避**：`60s * 2^min(retry,5)` 封顶 32 分钟，`next_retry_at` 到期才发（替代固定 60s 全量重试）；队列项用 `id`（AtomicLong）判重合并，不用时间戳（同毫秒竞态会丢消息）
+- **首页状态卡**：电池优化白名单实时检测
+- **规则测试器**：`test_rule.py`（粘贴样本看规则命中/分类，展示顺序与 rule_classify 优先级一致；注意 WORK_SOURCES 仅作参考提示，规则层实际不用它）
+- 有意不吸收：Room/WorkManager 全套（200 条队列数据量下性能无差，DB 退避已轻量实现 90% 收益）、Cactus 强保活（违背 Play 政策）
+
 ## 10. 建议使用的技能
 
 接手方推荐技能：`tdd`（改逻辑先写测试）、`code-review`（复查）、`diagnosing-bugs`（排查问题）、`grill-me`（需求不明确时先拷问用户）。

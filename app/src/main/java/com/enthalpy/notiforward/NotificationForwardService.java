@@ -4,6 +4,7 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -156,6 +157,21 @@ public class NotificationForwardService extends NotificationListenerService {
     }
 
     @Override
+    public void onListenerDisconnected() {
+        // 监听被系统断开（国内 ROM 强杀/权限重置/系统重启）时自动重绑，
+        // 吸收自 SmsForwarder：不依赖用户手动重开，自愈通知转发
+        super.onListenerDisconnected();
+        Log.w(TAG, "通知监听断开，请求系统重绑...");
+        try {
+            // 注意：无参实例版 requestRebind() 在新 SDK 已移除，须用静态带 ComponentName 版本
+            NotificationListenerService.requestRebind(
+                    new ComponentName(this, NotificationForwardService.class));
+        } catch (Exception e) {
+            Log.e(TAG, "requestRebind failed", e);
+        }
+    }
+
+    @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
         try {
             handleNotification(sbn);
@@ -169,6 +185,11 @@ public class NotificationForwardService extends NotificationListenerService {
     }
 
     private void handleNotification(StatusBarNotification sbn) {
+        // 跳过分组汇总通知（FLAG_GROUP_SUMMARY）：微信等多条折叠时系统会发一条 summary，
+        // 内容是"N 条新消息"，转发无意义且与逐条消息重复（吸收自 ItsAzni）
+        if ((sbn.getNotification().flags & Notification.FLAG_GROUP_SUMMARY) != 0) {
+            return;
+        }
         String packageName = sbn.getPackageName();
         String filter = prefs.getString("package_filter", "");
         boolean wechatOnly = prefs.getBoolean("wechat_only", true); // 与 App 界面默认一致（默认仅转发微信）

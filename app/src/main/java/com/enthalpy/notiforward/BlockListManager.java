@@ -8,6 +8,9 @@ import org.json.JSONArray;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * 屏蔽名单管理（黑名单模式）
@@ -78,11 +81,28 @@ public class BlockListManager {
         saveKeywords(list);
     }
 
-    /** 判断标题（群名/联系人名）是否命中屏蔽关键词（包含匹配） */
+    private static final Pattern REGEX_MARKER = Pattern.compile("^/(.+)/$");
+
+    /** 判断标题（群名/联系人名）是否命中屏蔽关键词。
+     *  支持两种格式：普通词（包含匹配，向后兼容）；
+     *  /正则/（如 /^fps|游戏$/ 显式正则）；非法正则自动降级为包含匹配（吸收自 SmsForwarder） */
     public synchronized boolean isBlocked(String title) {
         if (title == null || title.isEmpty()) return false;
         for (String kw : getKeywords()) {
-            if (title.contains(kw)) return true;
+            Matcher m = REGEX_MARKER.matcher(kw);
+            if (m.matches()) {
+                try {
+                    if (Pattern.compile(m.group(1)).matcher(title).find()) return true;
+                } catch (PatternSyntaxException e) {
+                    // 正则非法：降级为去掉斜杠后的包含匹配，并记录日志（原实现 contains(kw)
+                    // 永远不命中斜杠形式 → 屏蔽静默失效）
+                    android.util.Log.w("NotiForward", "屏蔽关键词正则非法，降级为包含匹配: " + kw);
+                    String plain = kw.length() >= 2 ? kw.substring(1, kw.length() - 1) : kw;
+                    if (title.contains(plain)) return true;
+                }
+            } else if (title.contains(kw)) {
+                return true;
+            }
         }
         return false;
     }
@@ -92,6 +112,8 @@ public class BlockListManager {
         if (title == null || title.trim().isEmpty()) return;
         String t = title.trim();
         List<String> seen = getSeenTitles();
+        // 已在最前则无需写盘（原实现每条通知都 remove+add+apply，微信高频下写放大）
+        if (!seen.isEmpty() && seen.get(0).equals(t)) return;
         seen.remove(t);
         seen.add(0, t);
         if (seen.size() > MAX_SEEN) {
