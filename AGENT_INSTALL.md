@@ -27,9 +27,11 @@ python --version
 git clone https://github.com/gctuj/NotiForward.git
 cd NotiForward
 
-# 3. 配置 DeepSeek Key（二选一，向主人索要）
+# 3. 配置 API Key（默认 DeepSeek；**任何 OpenAI 兼容服务都行**——DeepSeek、智谱 GLM、Kimi、通义、MiniMax 等，主人愿意用哪个都行）
 #    环境变量：set DEEPSEEK_API_KEY=你的key
-#    或创建 config.local.json（推荐）：{"deepseek_api_key": "你的key"}
+#    或创建 config.local.json（推荐）：
+#    {"api_key": "你的key", "base_url": "https://api.deepseek.com/chat/completions", "model": "deepseek-v4-flash"}
+#    base_url / model 可省略（默认 DeepSeek）；主人有其他服务的 Key 时，按其服务的 base_url / model 填写即可
 
 # 4. 启动接收器（先只启动接收器，分类器等频道配通后再开）
 python ntfy_receiver.py

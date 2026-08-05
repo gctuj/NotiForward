@@ -110,7 +110,7 @@ powershell -ExecutionPolicy Bypass -File build_apk.ps1
 
 首次安装与配置（按顺序）：
 
-1. **安装 APK**
+1. **安装 APK**：传到手机安装（QQ/微信文件助手、USB、`adb install -r` 均可）
 2. **授予通知使用权**：打开 App → 点「开启通知权限」→ 系统设置中开启 NotiForward 的通知使用权（部分国产 ROM 需重启手机后生效）
 3. **防后台被杀**：点「设置电池优化」加入白名单
 4. **记下你的频道号**：打开 App 主界面，会看到一个**频道名（ntfy topic）**，形如 `notiforward-xxxxxx`——**这是手机和电脑之间的"门牌号"，记下来**
@@ -123,9 +123,11 @@ powershell -ExecutionPolicy Bypass -File build_apk.ps1
 ### PC 端（Windows / macOS / Linux，Python 3.10+，仅标准库）
 
 ```bash
-# 1. 配置 AI Key（二选一）
+# 1. 配置 API Key（默认 DeepSeek；任何 OpenAI 兼容服务都行：DeepSeek/智谱 GLM/Kimi/通义/MiniMax 等）
 export DEEPSEEK_API_KEY="your-key"        # 环境变量
-# 或创建 config.local.json（不入 git）：{"deepseek_api_key": "your-key"}
+# 或创建 config.local.json（不入 git）：
+# {"api_key": "your-key", "base_url": "https://api.deepseek.com/chat/completions", "model": "deepseek-v4-flash"}
+#   base_url / model 可省略（默认 DeepSeek）；旧字段 deepseek_api_key 仍兼容
 
 # 2. 确认 topic 与 App 一致（App 主界面可查看；ntfy_receiver.py 顶部 NTFY_TOPIC 需相同）
 
@@ -148,7 +150,8 @@ python cleanup_old_records.py --keep-days 7 --keep-logs 5             # 实际�
 
 | 配置项 | 位置 | 说明 |
 |---|---|---|
-| `DEEPSEEK_API_KEY` | 环境变量 / `config.local.json` | DeepSeek 密钥（AI 分类用，不入 git） |
+| `DEEPSEEK_API_KEY` | 环境变量 / `config.local.json`（`api_key`） | **任意 OpenAI 兼容 API Key**（DeepSeek/智谱 GLM/Kimi/通义/MiniMax 等），默认 DeepSeek，不入 git |
+| `AI_BASE_URL` / `AI_MODEL` | 环境变量 / `config.local.json`（`base_url`/`model`） | 可选的接口地址与模型名，不填则用 DeepSeek 默认值 |
 | ntfy topic | App 主界面 ↔ `ntfy_receiver.py` 的 `NTFY_TOPIC` | 两端必须一致 |
 | 屏蔽名单 | App「屏蔽群管理」 | 黑名单模式，包含匹配 |
 | 包名过滤 | App 主界面 | 默认仅微信（`com.tencent.mm`） |

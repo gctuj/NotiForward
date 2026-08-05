@@ -10,19 +10,33 @@ import urllib.request
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
-# 密钥优先读环境变量 DEEPSEEK_API_KEY，其次读本地 config.local.json（不入 git）
-def _load_api_key():
-    k = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-    if k:
-        return k
+# API 配置（默认 DeepSeek；任意 OpenAI 兼容接口都可用，通过环境变量或 config.local.json 切换）
+def _load_local_config():
+    cfg = {}
     try:
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.local.json"),
                   encoding="utf-8") as f:
-            return json.load(f).get("deepseek_api_key", "")
+            cfg = json.load(f)
     except Exception:
-        return ""
-DEEPSEEK_KEY = _load_api_key()
-DEEPSEEK_MODEL = "deepseek-v4-flash"
+        pass
+    return cfg
+
+
+def _cfg_val(env_name, cfg, *keys, default=""):
+    v = os.environ.get(env_name, "").strip()
+    if v:
+        return v
+    for k in keys:
+        v = cfg.get(k)
+        if v:
+            return str(v)
+    return default
+
+
+_LOCAL = _load_local_config()
+DEEPSEEK_URL = _cfg_val("AI_BASE_URL", _LOCAL, "base_url", default=DEEPSEEK_URL)
+DEEPSEEK_MODEL = _cfg_val("AI_MODEL", _LOCAL, "model", default="deepseek-v4-flash")
+DEEPSEEK_KEY = _cfg_val("DEEPSEEK_API_KEY", _LOCAL, "api_key", "deepseek_api_key")
 
 WORK_CONTEXT = """
 用户职业背景：监理工程师（建筑工程），在合肥城市学院读土木工程相关专业。

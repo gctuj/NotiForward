@@ -21,23 +21,37 @@ STATE_FILE = Path(r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward\.classified_cou
 CACHE_FILE = Path(r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward\.analysis_cache.json")  # 已分类结果缓存，防止覆盖历史
 LOCK_PORT = 8897  # 单实例锁端口，防止多个分类器同时运行
 
-# ===== AI 配置（2026-08-02 23:48 回滚到 DeepSeek，用户决定放弃智谱 GLM） =====
-AI_URL = "https://api.deepseek.com/chat/completions"
-# 密钥优先读环境变量 DEEPSEEK_API_KEY，其次读本地 config.local.json（该文件不入 git）
-def _load_api_key():
-    k = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-    if k:
-        return k
+# ===== AI 配置（默认 DeepSeek；任何 OpenAI 兼容接口都可用） =====
+def _load_local_config():
+    cfg = {}
     try:
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.local.json"),
                   encoding="utf-8") as f:
-            return json.load(f).get("deepseek_api_key", "")
+            cfg = json.load(f)
     except Exception:
-        return ""
-AI_KEY = _load_api_key()
+        pass
+    return cfg
+
+
+def _cfg_val(env_name, cfg, *keys, default=""):
+    """按 环境变量 → 本地配置 的顺序取值（keys 为 config.local.json 中的字段名）"""
+    v = os.environ.get(env_name, "").strip()
+    if v:
+        return v
+    for k in keys:
+        v = cfg.get(k)
+        if v:
+            return str(v)
+    return default
+
+
+_LOCAL = _load_local_config()
+# 任意 OpenAI 兼容服务的 base_url / model / api_key 均可，通过环境变量或 config.local.json 切换
+AI_URL = _cfg_val("AI_BASE_URL", _LOCAL, "base_url", default="https://api.deepseek.com/chat/completions")
+AI_MODEL = _cfg_val("AI_MODEL", _LOCAL, "model", default="deepseek-v4-flash")
+AI_KEY = _cfg_val("DEEPSEEK_API_KEY", _LOCAL, "api_key", "deepseek_api_key")
 if not AI_KEY:
-    print("⚠ 未配置 DeepSeek API Key：请设置环境变量 DEEPSEEK_API_KEY 或在 config.local.json 中填写")
-AI_MODEL = "deepseek-v4-flash"  # 便宜快速，适合分类
+    print("⚠ 未配置 API Key：设置环境变量 DEEPSEEK_API_KEY，或 config.local.json 的 api_key 字段（任意 OpenAI 兼容服务的 Key 均可）")
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
