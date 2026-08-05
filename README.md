@@ -21,6 +21,8 @@
 - "屏蔽某个游戏群" → AI 告诉你改哪里
 - "收不到消息了" → AI 按 FAQ 帮你排查
 
+**第一步怎么交给 AI**：装好 App 后，把 App 主界面显示的**频道号**发给你的 AI（"我的频道是 notiforward-xxxxxx，帮我配好电脑端"），AI 会完成 PC 端配置，两端就连通了。
+
 **手机上怎么问 AI**（国内主流方案）：
 
 | 方式 | 说明 |
@@ -98,16 +100,20 @@ notiforward/
 ```powershell
 # Windows 一键构建 APK（需 JDK 17 + Android SDK）
 powershell -ExecutionPolicy Bypass -File build_apk.ps1
-# 或用 Android Studio 打开 app/ 目录直接 Run
+# 或用 Android Studio 打开 app/ 目录直接 Run；或下载 Release 中的现成 APK
 ```
 
-安装与授权（按顺序）：
+首次安装与配置（按顺序）：
 
-1. APK 传到手机安装。升级请**覆盖安装**，不要卸载重装（卸载会清掉 ntfy topic 配置）
-2. 打开 App →「开启通知权限」→ 系统设置授予 NotiForward「通知使用权」（部分国产 ROM 需重启手机后生效）
-3.「设置电池优化」加入白名单（防后台被杀）
-4. 通知栏出现"NotiForward 运行中"常驻通知 = 服务正常
-5. 点「发送测试消息」，PC 端能收到即链路打通
+1. **安装 APK**：传到手机安装（QQ/微信文件助手、USB、`adb install -r` 均可）
+2. **授予通知使用权**：打开 App → 点「开启通知权限」→ 系统设置中开启 NotiForward 的通知使用权（部分国产 ROM 需重启手机后生效）
+3. **防后台被杀**：点「设置电池优化」加入白名单
+4. **记下你的频道号**：打开 App 主界面，会看到一个**频道名（ntfy topic）**，形如 `notiforward-xxxxxx`——**这是手机和电脑之间的"门牌号"，记下来**
+5. **把频道号配到电脑**（二选一）：
+   - 告诉你的 AI："我的频道是 notiforward-xxxxxx，帮我配好"——AI 会改 PC 端配置
+   - 或手动：编辑 `ntfy_receiver.py` 顶部 `NTFY_TOPIC = "notiforward-xxxxxx"`，保存后重启接收器
+6. **验证链路**：App 点「发送测试消息」→ PC 端能收到 = 打通
+7. 通知栏出现"NotiForward 运行中"常驻通知 = 服务正常
 
 ### PC 端（Windows / macOS / Linux，Python 3.10+，仅标准库）
 

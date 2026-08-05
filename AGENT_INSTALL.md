@@ -78,11 +78,21 @@ powershell -ExecutionPolicy Bypass -File build_apk.ps1
 3. 点「设置电池优化」加入白名单（防后台被杀，否则收不到）
 4. 通知栏出现"NotiForward 运行中"常驻通知 = 服务活着
 
-### 4.3 topic 同步（关键，App 与 PC 必须一致）
+### 4.3 频道（topic）配置——手机和电脑必须指向同一个（关键）
 
-- App 主界面可查看当前 topic（形如 `notiforward-xxx`）
-- PC 端 `ntfy_receiver.py` 顶部的 `NTFY_TOPIC` 必须与 App 相同
-- 不一致时：改 `ntfy_receiver.py` 后重启接收器（Agent 确认两端一致即可）
+App 首次打开会自动生成一个**频道号**（ntfy topic），形如 `notiforward-xxxxxx`。手机把消息发到这个频道，PC 从这个频道收——**两端必须一致**，否则收不到。
+
+Agent 按以下步骤完成首次配置：
+
+1. 让用户打开手机 App 主界面，读出频道号（形如 `notiforward-xxxxxx`），你记录下来
+2. 编辑 PC 端 `ntfy_receiver.py` 顶部，把 `NTFY_TOPIC` 改成该频道号：
+   ```python
+   NTFY_TOPIC = "notiforward-xxxxxx"   # 与 App 主界面显示的一致
+   ```
+3. 重启接收器（杀掉旧进程重新 `python ntfy_receiver.py`，或用启动器整体重启）
+4. 验证：让用户在 App 点「发送测试消息」，接收器终端应打印该消息；再让手机收到一条真实微信通知，`messages/` 下应出现新记录
+
+> 若用户改过 App 里的频道号（如重装 App 导致频道变化），重复上述 1-4 步即可。
 
 ## 5. 端到端验证
 
