@@ -126,7 +126,7 @@ python collector_launcher.py          # 或分别跑 ntfy_receiver.py + classify
 3. ~~**P1**：分类失败消息自动重试~~（✅ 已修 2026-08-05：失败入 `failed_classify.jsonl`，`fix_missing.py` 通用补）
 4. **P2**：Android 加 JUnit 测试（QueueManager 边界、BlockListManager 匹配逻辑）
 5. **P2**：GitHub Actions CI（跑 unittest）
-6. **P2**：`collector_launcher.py` 增加子进程崩溃自动拉起
+6. ~~**P2**：`collector_launcher.py` 增加子进程崩溃自动拉起~~（✅ 已修 2026-08-05，见 9.5 节）
 
 ## 9.5 同类轮子吸收记录（2026-08-05）
 
@@ -137,6 +137,7 @@ python collector_launcher.py          # 或分别跑 ntfy_receiver.py + classify
 - **队列指数退避**：`60s * 2^min(retry,5)` 封顶 32 分钟，`next_retry_at` 到期才发（替代固定 60s 全量重试）；队列项用 `id`（AtomicLong）判重合并，不用时间戳（同毫秒竞态会丢消息）
 - **首页状态卡**：电池优化白名单实时检测
 - **规则测试器**：`test_rule.py`（粘贴样本看规则命中/分类，展示顺序与 rule_classify 优先级一致；注意 WORK_SOURCES 仅作参考提示，规则层实际不用它）
+- **启动器 v2 崩溃自动重启**：`collector_launcher.py` 用 `ManagedProc` 监控两个子进程，任一崩溃自动拉起；10 秒窗口内连续 3 次崩溃停止重启（判定用 `last_alive_at` 而非检测时刻，避免检测延迟误判）；启动前校验 python 存在 + spawn 后 2 秒确认存活。单测在 `tests/test_launcher.py`
 - 有意不吸收：Room/WorkManager 全套（200 条队列数据量下性能无差，DB 退避已轻量实现 90% 收益）、Cactus 强保活（违背 Play 政策）
 
 ## 10. 建议使用的技能
