@@ -138,26 +138,6 @@ SYSTEM_PROMPT = """你是一个微信消息分类助手。用户是建筑监理�
 只输出 JSON，不要其他文字。"""
 
 
-def load_classified_count():
-    try:
-        return int(STATE_FILE.read_text().strip())
-    except Exception:
-        return 0
-
-
-def save_classified_count(n):
-    """保存进度，带重试（Windows 文件锁冲突时重试）"""
-    for attempt in range(3):
-        try:
-            STATE_FILE.write_text(str(n))
-            return True
-        except Exception as e:
-            if attempt < 2:
-                time.sleep(1)
-            else:
-                print(f"  警告: 进度保存失败: {e}")
-
-
 def load_cache():
     """读取已分类的结果缓存（list of dict）"""
     try:
@@ -193,6 +173,47 @@ def get_all_messages():
                 except json.JSONDecodeError:
                     continue
     return all_msgs
+
+
+def filter_new(all_msgs, cursor):
+    """按时间游标筛选新消息（消息 time 字符串大于游标视为新）
+    cursor 为空时全部视为新消息。相比旧版"已分类条数"索引方案，
+    游标方案在清理脚本删除旧文件后不会错位。"""
+    if not cursor:
+        return list(all_msgs)
+    return [m for m in all_msgs if str(m.get("time", "")) > cursor]
+
+
+def migrate_cursor_from_cache(cache):
+    """旧版进度（数字条数）迁移为时间游标：取缓存中最后一条消息的时间。
+    无缓存或全空时返回空串（相当于从零开始）。"""
+    times = [str(r.get("time", "")) for r in cache if r.get("time")]
+    return max(times) if times else ""
+
+
+def load_cursor():
+    """读取进度游标。新格式 = 最后处理消息的时间；旧格式（纯数字条数）返回空串，由调用方从缓存迁移。"""
+    try:
+        raw = STATE_FILE.read_text().strip()
+    except Exception:
+        return ""
+    if not raw or raw.isdigit():
+        return ""
+    return raw
+
+
+def save_cursor(cursor):
+    """保存进度游标，带重试（Windows 文件锁冲突时重试）"""
+    for attempt in range(3):
+        try:
+            STATE_FILE.write_text(str(cursor))
+            return True
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(1)
+            else:
+                print(f"  警告: 进度保存失败: {e}")
+    return False
 
 
 def classify_with_ai(msg):
@@ -352,11 +373,13 @@ def main():
     print(f"模型: {AI_MODEL}")
     print(f"消息目录: {MESSAGES_DIR}\n")
 
-    classified = load_classified_count()
+    cursor = load_cursor()
+    if not cursor:
+        cursor = migrate_cursor_from_cache(load_cache())
     all_msgs = get_all_messages()
 
-    # 只处理新消息
-    new_msgs = all_msgs[classified:]
+    # 只处理新消息（时间游标，清理旧文件不影响）
+    new_msgs = filter_new(all_msgs, cursor)
     if not new_msgs:
         print("没有新消息需要分类")
         return
@@ -379,8 +402,9 @@ def main():
             results.append(None)
         time.sleep(0.5)  # 避免触发限流
 
-    # 保存进度和缓存
-    save_classified_count(classified + len(new_msgs))
+    # 保存进度（时间游标）和缓存
+    last_time = max(str(m.get("time", "")) for m in new_msgs)
+    save_cursor(last_time)
     save_cache(cache)
 
     if results:
@@ -415,9 +439,11 @@ def watch():
 
             if latest_mtime > last_mtime:
                 last_mtime = latest_mtime
-                classified = load_classified_count()
+                cursor = load_cursor()
+                if not cursor:
+                    cursor = migrate_cursor_from_cache(load_cache())
                 all_msgs = get_all_messages()
-                new_msgs = all_msgs[classified:]
+                new_msgs = filter_new(all_msgs, cursor)
 
                 if new_msgs:
                     print(f"[{now()}] 发现 {len(new_msgs)} 条新消息，即时分类...")
@@ -434,7 +460,8 @@ def watch():
                             print(f"  → [{tag}] {'💼' if result['is_work'] else ''}{'🔴' if result['importance']=='high' else ''}{'📌' if result['needs_todo'] else ''} {result['category']}: {result['summary']}")
                         time.sleep(0.3)
 
-                    save_classified_count(classified + len(new_msgs))
+                    last_time = max(str(m.get("time", "")) for m in new_msgs)
+                    save_cursor(last_time)
                     save_cache(cache)
                     out_file = write_analysis(cache)
                     print(f"分类完成！结果已保存: {out_file}")

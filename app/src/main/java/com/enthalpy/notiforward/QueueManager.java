@@ -49,7 +49,7 @@ public class QueueManager {
         prefs.edit().putString(KEY_QUEUE, queue.toString()).apply();
     }
 
-    /** 尝试补发队列中所有消息；成功移除，失败 retry+1，超过上限丢弃。返回成功发送条数 */
+    /** 尝试补发队列中所有消息；成功移除，失败 retry+1，只有超过重试上限才丢弃。返回成功发送条数 */
     public synchronized int flush() {
         JSONArray queue = getQueue();
         JSONArray remaining = new JSONArray();
@@ -59,16 +59,33 @@ public class QueueManager {
                 JSONObject item = queue.getJSONObject(i);
                 String topic = item.getString("topic");
                 String payload = item.getString("payload");
-                boolean ok = NotificationForwardService.sendToNtfy(topic, payload);
+                boolean ok;
+                try {
+                    ok = NotificationForwardService.sendToNtfy(topic, payload);
+                } catch (Exception e) {
+                    ok = false; // 发送异常同样视为失败，保留重试
+                }
                 if (ok) {
                     sent++;
                     continue;
                 }
                 int retry = item.optInt("retry", 0) + 1;
-                if (retry >= MAX_RETRY) continue; // 超过重试上限，丢弃
+                if (retry >= MAX_RETRY) continue; // 只有超过重试上限才丢弃
                 item.put("retry", retry);
                 remaining.put(item);
             } catch (Exception ignored) {
+                // 单条数据损坏：保留并降级为重试计数，避免静默丢失
+                try {
+                    JSONObject item = queue.getJSONObject(i);
+                    int retry = item.optInt("retry", 0) + 1;
+                    if (retry < MAX_RETRY) {
+                        item.put("retry", retry);
+                        remaining.put(item);
+                    }
+                } catch (Exception e2) {
+                    // 条目完全损坏且无法修复，只能放弃（记录日志由上层观察）
+                    android.util.Log.e("NotiForward", "queue item corrupted, dropped", e2);
+                }
             }
         }
         prefs.edit().putString(KEY_QUEUE, remaining.toString()).apply();

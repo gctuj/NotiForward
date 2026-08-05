@@ -108,8 +108,9 @@ def spawn(job, script, *args):
     if job:
         try:
             _AssignToJob(job, int(p._handle))
-        except Exception:
-            pass
+        except Exception as e:
+            # 挂 Job 失败时兜底失效，必须提示（否则关闭窗口会残留子进程）
+            print(f"⚠ 警告: 进程 {script} 无法挂入 Job Object（{e}），关闭窗口时可能无法自动停止")
     return p
 
 

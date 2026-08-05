@@ -87,15 +87,17 @@ def main():
     # 读取缺失的 4 条消息
     target_times = {"2026-08-02 13:00:12", "2026-08-02 13:49:08", "2026-08-02 13:50:40", "2026-08-02 13:50:45"}
     msgs = []
-    for line in open(r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward\messages\2026-08-02.jsonl", encoding="utf-8"):
-        line = line.strip()
-        if not line:
-            continue
-        m = json.loads(line)
-        if m.get("time") in target_times:
-            msgs.append(m)
+    with open(r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward\messages\2026-08-02.jsonl", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            m = json.loads(line)
+            if m.get("time") in target_times:
+                msgs.append(m)
 
-    cache = json.load(open(r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward\.analysis_cache.json", encoding="utf-8"))
+    with open(r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward\.analysis_cache.json", encoding="utf-8") as f:
+        cache = json.load(f)
     cache_times = {r["time"] for r in cache}
 
     print(f"需要补分类 {len(msgs)} 条\n")
@@ -141,7 +143,8 @@ def main():
         print(f"  → {' '.join(tags)} {category}: {summary}")
         time.sleep(1)
 
-    json.dump(cache, open(r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward\.analysis_cache.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    with open(r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward\.analysis_cache.json", "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=1)
     print(f"\n缓存更新完成，共 {len(cache)} 条")
 
 

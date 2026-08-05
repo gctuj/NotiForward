@@ -56,18 +56,20 @@ public class NotificationForwardService extends NotificationListenerService {
     private PowerManager.WakeLock wakeLock;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
-    /** 定时补发队列中的失败消息 */
+    /** 定时补发队列中的失败消息：flush 在后台线程执行，主线程只负责排下一次调度（避免 ANR） */
     private final Runnable queueFlusher = new Runnable() {
         @Override
         public void run() {
-            try {
-                int sent = queueManager.flush();
-                if (sent > 0) {
-                    Log.i(TAG, "队列补发成功 " + sent + " 条，剩余 " + queueManager.size() + " 条");
+            executor.execute(() -> {
+                try {
+                    int sent = queueManager.flush();
+                    if (sent > 0) {
+                        Log.i(TAG, "队列补发成功 " + sent + " 条，剩余 " + queueManager.size() + " 条");
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "queue flush error", e);
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "queue flush error", e);
-            }
+            });
             handler.postDelayed(this, QUEUE_FLUSH_INTERVAL);
         }
     };
@@ -87,6 +89,7 @@ public class NotificationForwardService extends NotificationListenerService {
     public void onDestroy() {
         super.onDestroy();
         handler.removeCallbacks(queueFlusher);
+        executor.shutdown();
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
             Log.i(TAG, "WakeLock released");
@@ -157,7 +160,7 @@ public class NotificationForwardService extends NotificationListenerService {
     private void handleNotification(StatusBarNotification sbn) {
         String packageName = sbn.getPackageName();
         String filter = prefs.getString("package_filter", "");
-        boolean wechatOnly = prefs.getBoolean("wechat_only", false);
+        boolean wechatOnly = prefs.getBoolean("wechat_only", true); // 与 App 界面默认一致（默认仅转发微信）
 
         // 包名过滤：filter 非空时按逗号分隔的多包名匹配；
         // 为空时用默认列表（微信+QQ），仅微信开关开启时只放行微信
@@ -311,9 +314,10 @@ public class NotificationForwardService extends NotificationListenerService {
     }
 
     public static boolean sendToNtfy(String topic, String message) {
+        HttpURLConnection conn = null;
         try {
             URL url = new URL(NTFY_BASE + "/" + topic);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setDoOutput(true);
@@ -324,12 +328,15 @@ public class NotificationForwardService extends NotificationListenerService {
             os.flush();
             os.close();
             int code = conn.getResponseCode();
-            conn.disconnect();
             Log.i(TAG, "ntfy response: " + code);
             return code >= 200 && code < 300;
         } catch (Exception e) {
             Log.e(TAG, "sendToNtfy error", e);
             return false;
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
         }
     }
 }
