@@ -9,13 +9,16 @@
 
 ## 安装
 
+**推荐：让 AI 帮你装**
+复制本仓库网址 `https://github.com/gctuj/NotiForward` 发给你的 AI，告诉它"照着这个仓库配置"。AI 会自己阅读仓库里的安装文档（AGENT_INSTALL.md），一步步引导你完成安装。
+
+**手动安装**（不依赖 AI 时）：
 - 手机端：构建 APK（见《快速开始》），或下载 Release 中的现成 APK
-- PC 端：`git clone` 后直接运行
-- 用 AI 帮你装：把 [AGENT_INSTALL.md](AGENT_INSTALL.md) 发给任何 AI 助手，它会照着完成全部安装配置
+- PC 端：`git clone https://github.com/gctuj/NotiForward.git` 后直接运行（Python 3.10+）
 
 ## 使用方式（推荐）：交给你的 AI
 
-装好之后，你不必自己记命令、看日志。把本仓库（尤其是 [AGENT_INSTALL.md](AGENT_INSTALL.md) 和 `analysis/` 目录）交给你的 AI 助手，之后只要**在手机上问一句**：
+装好之后，你不必自己记命令、看日志。把本仓库网址发给你的 AI（"照着这个仓库配置"），AI 会自行阅读配置；之后只要**在手机上问一句**：
 
 - "今天微信有什么重要消息？" → AI 读 `analysis/` 汇总给你
 - "屏蔽某个游戏群" → AI 告诉你改哪里
