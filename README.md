@@ -1,59 +1,52 @@
-# NotiForward — 微信消息自动化收集与智能分类
+# NotiForward
 
-> 想让 AI 帮你盯微信工作消息，又**怕封号**？
-> NotiForward 走一条**完全绿色的路**：只读系统通知栏接口（NotificationListenerService），
-> 不 Root、不 Hook、不碰微信数据库——微信根本无法感知，零封号风险。
-> 代价是信息只来自通知栏（不含历史/图片原图），但配合下方"通知最大化"设置，足够覆盖日常工作消息。
+把手机微信通知转发到电脑，并用 AI 自动分类（工作 / 重要 / 待办）。
+
+基于 Android 系统「通知使用权」（NotificationListenerService），免 Root、免 Hook，微信无法感知——适合想监控微信工作消息又担心封号的场景。信息只来自通知栏（不含聊天历史、图片原图）。
 
 <div align="center">
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Android%207%2B%20%7C%20Windows-lightgrey.svg)
-![Android](https://img.shields.io/badge/Android-Java%20%2B%20XML-green.svg)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)
-![Status](https://img.shields.io/badge/status-stable-brightgreen.svg)
 
 </div>
 
-## 🔍 这个项目叫什么？常见叫法 / 搜索关键词
+## 安装
 
-有类似想法的人可能会用各种说法找它——下面这些都指向本项目：
+- **手机端**：构建 APK（见下方《快速开始》），或等 Release 提供现成 APK 直接安装
+- **PC 端**：`git clone` 后直接运行（仅 Python 标准库，无第三方依赖）
+- **想用 Agent 帮忙装**：把 [AGENT_INSTALL.md](AGENT_INSTALL.md) 发给任何 AI 助手，它会照着帮你完成全部安装配置
 
-**中文叫法**：微信消息监控、微信通知转发、微信消息同步到电脑、微信消息推送到 PC、微信工作消息提醒、微信消息电脑查看、微信群消息转发、微信消息机器人、微信自动提醒、微信消息推送
-
-**英文叫法**：wechat monitor、wechat notification forwarding、wechat to pc、forward wechat messages to computer、android notification mirror、notification forwarder、wechat notifier、wechat message sync、notification to desktop
-
-**一句话定位**：想高效率获取微信工作消息、又怕封号的人的**绿色方案**——只读通知栏，不 Hook 不 Root，AI 自动分类。
-
-## 📚 文档导航
+## 📚 文档
 
 | 文档 | 说明 |
 |---|---|
-| [UPLOAD.md](UPLOAD.md) | **GitHub 上传完整指南**（建仓、推送、仓库设置） |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南（构建、测试、提 PR） |
+| [AGENT_INSTALL.md](AGENT_INSTALL.md) | 给 Agent 的安装说明（把这份文档丢给 AI 即可自动装好） |
+| [UPLOAD.md](UPLOAD.md) | GitHub 上传与仓库设置指南 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本更新日志 |
 | [SECURITY.md](SECURITY.md) | 隐私与安全说明 |
 
-## 💡 为什么选"通知"这条路（设计理念）
+## 方案对比（为什么选通知转发）
 
 | 方案 | 信息完整度 | 封号风险 | 复杂度 |
 |---|---|---|---|
-| **通知转发（本项目）** | 通知栏内容 | ✅ **零风险** | 低 |
-| 无障碍服务（Accessibility） | 聊天界面文本 | ⚠️ 微信会检测，有风险 | 中 |
-| Hook / 逆向（Xposed、PC 协议） | 全量消息 | 🔴 高危 | 高 |
+| 通知转发（本项目） | 仅通知栏内容 | 低 | 低 |
+| 无障碍服务（Accessibility） | 聊天界面文本 | 中（微信会检测） | 中 |
+| Hook / 逆向（Xposed、PC 协议） | 全量消息 | 高 | 高 |
 
-**绿色途径的代价**：拿不到聊天历史、图片原图、更早的消息——只有**通知栏此刻弹出**的内容。
-所以下面专门有一节《通知最大化指南》，把"能看到的通知"调到最多，把绿色方案的收益拉满。
+通知方案的局限：拿不到聊天历史、图片原图、更早的消息——只有通知栏弹出的内容。见下文《通知最大化指南》尽量多拿一些。
 
 ## ✨ 特性
 
-- **零侵入、零封号风险**：仅使用 Android 系统「通知使用权」（NotificationListenerService），不 Root、不 Hook 微信进程、不读聊天数据库
-- **黑名单过滤**：按群名/联系人屏蔽（包含匹配），内置游戏群屏蔽配置，App 内可视化管理
-- **防漏三重保障**：前台服务保活 + WakeLock + 开机自启 + **发送队列自动重试**（断网/限流时消息排队补发；队列上限 200 条、单条重试 50 次，超过上限才放弃）
+- **免 Root 免 Hook**：只读系统通知栏接口，不碰微信进程与数据
+- **黑名单过滤**：按群名/联系人屏蔽（包含匹配），App 内可视化管理
+- **防漏保障**：前台服务保活 + WakeLock + 开机自启 + 发送队列自动重试（断网/限流时排队补发；队列上限 200 条、单条重试 50 次）
 - **断点续传**：PC 端长轮询 + `since=<last_id>`，重启不重复、不漏收
-- **AI 智能分类**：规则层优先（工作/游戏关键词零延迟）→ 未命中走 DeepSeek，判断是否工作 / 重要程度 / 是否待办 / 类别（工作/学校/游戏/生活）；进度用**时间游标**，清理旧记录不会导致漏分类
-- **自动清理**：`cleanup_old_records.py` 删除超过保留天数的记录（默认 7 天）；**建议配合外部定时任务**（如系统计划任务）每 2 天执行一次
-- **一键开关**：桌面双击启动 / 关窗即停（Windows）
+- **AI 智能分类**：规则层优先（工作/游戏关键词零延迟）→ 未命中走 DeepSeek，输出 工作/重要/待办 归档；进度用时间游标，清理旧记录不影响后续分类
+- **自动清理**：`cleanup_old_records.py` 删除超过保留天数的记录（默认 7 天），建议配合外部定时任务
+- **一键开关**（Windows）：双击启动 / 关窗即停
 
 ## 🏗 架构
 
