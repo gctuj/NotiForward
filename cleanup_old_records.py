@@ -11,9 +11,24 @@ import argparse
 import ctypes
 import json
 import os
+import socket
 from datetime import datetime, timedelta
 
 BASE = r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward"
+CLASSIFIER_LOCK_PORT = 8897  # classify_messages.py 的单实例锁端口
+
+
+def port_open(port):
+    """探测本机端口是否被占用（判断相关进程是否在运行）"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(1)
+    try:
+        s.connect(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
 
 
 def force_remove(path):
@@ -87,8 +102,17 @@ def main():
                 else:
                     cache_removed += 1
             if not args.dry_run:
-                with open(cache_path, "w", encoding="utf-8") as f:
+                # 临时文件 + os.replace 原子替换：崩溃也不会写坏缓存，
+                # 且与 watch 模式并发时不会产生半截 JSON
+                tmp = cache_path + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
                     json.dump(new_cache, f, ensure_ascii=False, indent=1)
+                os.replace(tmp, cache_path)
+
+    # 分类器并发提示：watch 模式可能正在写缓存
+    if port_open(CLASSIFIER_LOCK_PORT):
+        print(f"[提示] 检测到分类器正在运行（端口 {CLASSIFIER_LOCK_PORT}），"
+              f"缓存将用原子写更新；如需避免并发请先停止分类器再执行。\n")
 
     # ---- 报告 ----
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] 清理报告 (保留 {args.keep_days} 天, 截止 {cutoff})")

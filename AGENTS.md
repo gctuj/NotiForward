@@ -109,18 +109,21 @@ python collector_launcher.py          # 或分别跑 ntfy_receiver.py + classify
 ## 8. 已知边界与问题（改代码时注意）
 
 1. **通知方案固有边界**：免打扰的群不弹通知、订阅号折叠、图片只记录"[图片]"占位——README 已如实说明，属设计内，不要"修"
-2. **落盘与断点原子性**（已知未修）：`ntfy_receiver.py` 先推进 `last_id` 再落盘，落盘异常时该条可能永久跳过——改进方向见下
+2. **落盘与断点原子性**（✅ 2026-08-05 已修）：`ntfy_receiver.py` 先落盘成功再推进 `last_id`，失败不推进、下轮重拉（内存 seen 去重防重复）；状态文件临时文件+原子替换；去重键含 ntfy `id`；备用文件带日期按天切换。回归测试在 `tests/test_fixes.py`
 3. **PC 端配置散落**：topic/路径/端口在各脚本顶部硬编码，改动需多处同步（架构上建议集中到 config 模块，尚未做）
 4. **自动清理无内置调度**：依赖外部定时任务（README 已注明）
 5. **Android 无测试框架**：当前无 JUnit 依赖，队列/线程逻辑靠构建+人工验证
 6. git 历史中有用户在 GitHub 网页的直接修改（commit `3f6d973`），本地与远端需先 fetch 再 push，勿强推
+7. （✅ 2026-08-05 已修）`classify_messages.py`：main 与 watch 均规则层优先；缓存原子写+去重；无 time 消息不再被游标跳过；无 key 不发空认证请求；分类失败写入 `failed_classify.jsonl`
+8. （✅ 2026-08-05 已修）`fix_missing.py` 通用化：优先读失败队列、兜底扫描 messages、补后自动重建 analysis；`summary.py --date/--all` 按天过滤
+9. （✅ 2026-08-05 已修）Android：`QueueManager.flush` 不再持锁做网络 I/O（原主线程 ANR 隐患）；WakeLock 限时 10 分钟；去重窗口 LRU；`startForeground` try-catch；Manifest 关明文/关备份/补 FGS property；BootReceiver 改引导式
 
 ## 9. 可能的改进方向（给接手 Agent 的候选任务）
 
 按优先级：
-1. **P0**：`ntfy_receiver.py` 落盘与断点推进原子化（先落盘成功再推进 last_id，或失败补偿重试）
+1. ~~**P0**：`ntfy_receiver.py` 落盘与断点推进原子化~~（✅ 已修 2026-08-05，见上）
 2. **P1**：PC 端配置集中化（config.py 统一 topic/路径/端口/API 配置，各脚本引用）
-3. **P1**：分类失败消息自动重试（当前失败只记 None 并推进游标，靠 fix_missing.py 手动补）
+3. ~~**P1**：分类失败消息自动重试~~（✅ 已修 2026-08-05：失败入 `failed_classify.jsonl`，`fix_missing.py` 通用补）
 4. **P2**：Android 加 JUnit 测试（QueueManager 边界、BlockListManager 匹配逻辑）
 5. **P2**：GitHub Actions CI（跑 unittest）
 6. **P2**：`collector_launcher.py` 增加子进程崩溃自动拉起

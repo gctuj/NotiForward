@@ -1,165 +1,150 @@
 # -*- coding: utf-8 -*-
-"""补分类失败的消息（含重试）"""
-import json
-import os
-import sys
-import io
-import time
-import urllib.request
+"""补分类失败的消息（通用版）
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+数据源（按优先级）：
+1. failed_classify.jsonl — classify_messages.py 分类失败时自动记录的队列
+2. 兜底：扫描 messages/*.jsonl 中 time 不在缓存里的消息（如旧版遗留）
 
-DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
-# API 配置（默认 DeepSeek；任意 OpenAI 兼容接口都可用，通过环境变量或 config.local.json 切换）
-def _load_local_config():
-    cfg = {}
-    try:
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.local.json"),
-                  encoding="utf-8") as f:
-            cfg = json.load(f)
-    except Exception:
-        pass
-    return cfg
+处理：规则层优先（与主分类器一致），未命中走 AI；
+成功后写入缓存（原子替换）并从失败队列移除；
+最后自动重建 analysis/*.md。
 
-
-def _cfg_val(env_name, cfg, *keys, default=""):
-    v = os.environ.get(env_name, "").strip()
-    if v:
-        return v
-    for k in keys:
-        v = cfg.get(k)
-        if v:
-            return str(v)
-    return default
-
-
-_LOCAL = _load_local_config()
-DEEPSEEK_URL = _cfg_val("AI_BASE_URL", _LOCAL, "base_url", default=DEEPSEEK_URL)
-DEEPSEEK_MODEL = _cfg_val("AI_MODEL", _LOCAL, "model", default="deepseek-v4-flash")
-DEEPSEEK_KEY = _cfg_val("DEEPSEEK_API_KEY", _LOCAL, "api_key", "deepseek_api_key")
-
-WORK_CONTEXT = """
-用户职业背景：监理工程师（建筑工程），在合肥城市学院读土木工程相关专业。
-工作相关：监理日志、旁站记录、基坑开挖、混凝土浇筑、施工单位（北京锦程前方科技有限公司）、
-项目经理刘玉斌、铁塔项目（中国铁塔安徽分公司）、项目资料、验收、图纸、会议、甲方、监理单位。
-工作群/联系人例子（这些来源基本都算工作消息）：陈国良、吴克奇、白福欣、工程芜湖项目部监理群、
-涉及"铁塔"（中国铁塔安徽分公司）的聊天。
-游戏群例子：永劫糕手（都来救瓶中饭）是游戏群不是工作群（铁塔项目名在游戏群出现是疑似误发/分享）。
+用法: python fix_missing.py [--dry-run]
 """
+import json
+import sys
+import time
+from pathlib import Path
 
-SYSTEM_PROMPT = """你是一个微信消息分类助手。用户是建筑监理工程师。
-对每条微信消息，输出 JSON 格式分类结果：
-{
-  "is_work": true/false,
-  "importance": "high"/"medium"/"low",
-  "needs_todo": true/false,
-  "todo_text": "待办内容",
-  "category": "工作/学校/游戏/生活/闲聊",
-  "summary": "一句话摘要"
-}
-判断标准：
-- is_work：涉及监理、工程、项目、施工、验收、资料、甲方、同事工作安排等
-- importance high：紧急事项、截止日期、上级/领导安排、钱相关、需要立即处理
-- needs_todo：消息里有明确行动要求（回复某人、交资料、参加会议、完成任务等）
-- 游戏群闲聊、朋友闲聊归为 low importance
-只输出 JSON，不要其他文字。"""
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
+BASE = Path(__file__).resolve().parent
+FAILED_FILE = BASE / "failed_classify.jsonl"
 
-def classify_with_retry(msg, retries=3):
-    title = msg.get("title", "")
-    text = msg.get("full_text") or msg.get("text") or msg.get("raw", "")
-    content = f"消息来源(群名或联系人): {title}\n消息内容: {text}"
-    payload = json.dumps({
-        "model": DEEPSEEK_MODEL,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT + WORK_CONTEXT},
-            {"role": "user", "content": content}
-        ],
-        "max_tokens": 500,
-        "temperature": 0.1
-    }).encode("utf-8")
-
-    for attempt in range(retries):
-        try:
-            req = urllib.request.Request(DEEPSEEK_URL, data=payload, headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {DEEPSEEK_KEY}"
-            })
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-                content_out = result["choices"][0]["message"]["content"].strip()
-            if content_out.startswith("```"):
-                content_out = content_out.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-            return json.loads(content_out)
-        except Exception as e:
-            print(f"  第{attempt+1}次失败: {e}")
-            time.sleep(2)
-    return None
+# 无论从哪个目录运行，都能 import 到同目录的主分类器模块
+sys.path.insert(0, str(BASE))
+import classify_messages as cm  # noqa: E402  复用主分类器的规则层/缓存/写入逻辑
 
 
-def main():
-    # 读取缺失的 4 条消息
-    target_times = {"2026-08-02 13:00:12", "2026-08-02 13:49:08", "2026-08-02 13:50:40", "2026-08-02 13:50:45"}
+def load_failed():
+    """读取失败队列（按 time+title+text 去重）"""
     msgs = []
-    with open(r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward\messages\2026-08-02.jsonl", encoding="utf-8") as f:
-        for line in f:
+    seen = set()
+    try:
+        for line in FAILED_FILE.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line:
                 continue
-            m = json.loads(line)
-            if m.get("time") in target_times:
-                msgs.append(m)
+            try:
+                m = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            key = (m.get("time", ""), m.get("title", ""), m.get("full_text") or m.get("text", ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            msgs.append(m)
+    except FileNotFoundError:
+        pass
+    return msgs
 
-    with open(r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward\.analysis_cache.json", encoding="utf-8") as f:
-        cache = json.load(f)
-    cache_times = {r["time"] for r in cache}
 
-    print(f"需要补分类 {len(msgs)} 条\n")
-    for m in msgs:
+def find_missing_from_messages():
+    """兜底：扫描 messages/ 中 time 不在缓存里的消息（旧版遗留场景）"""
+    cache = cm.load_cache()
+    cache_times = {str(r.get("time", "")) for r in cache}
+    missing = []
+    for f in sorted(cm.MESSAGES_DIR.glob("*.jsonl")):
+        try:
+            lines = f.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                m = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if m.get("app") and str(m.get("time", "")) not in cache_times:
+                missing.append(m)
+    return missing
+
+
+def save_failed(msgs):
+    """把仍失败的消息写回失败队列（原子替换）"""
+    tmp = FAILED_FILE.with_suffix(".tmp")
+    try:
+        tmp.write_text("\n".join(json.dumps(m, ensure_ascii=False) for m in msgs) + ("\n" if msgs else ""),
+                       encoding="utf-8")
+        tmp.replace(FAILED_FILE)
+        return True
+    except OSError as e:
+        print(f"  警告: 失败队列更新失败: {e}")
+        return False
+
+
+def main():
+    if not cm.AI_KEY:
+        print("错误: 未配置 API Key（DEEPSEEK_API_KEY 或 config.local.json 的 api_key），无法补分类")
+        sys.exit(1)
+
+    dry_run = "--dry-run" in sys.argv
+    cache = cm.load_cache()
+    failed = load_failed()
+    missing = find_missing_from_messages()
+
+    # 失败队列为主，消息扫描为兜底（避免重复补同一批）
+    target = failed if failed else missing
+    if not target:
+        print("没有需要补分类的消息 🎉")
+        return
+
+    print(f"需要补分类 {len(target)} 条（来源: {'失败队列' if failed else '消息扫描'}）\n")
+    still_failed = []
+    done = 0
+    for m in target:
         t = m.get("time", "")
-        if t in cache_times:
-            print(f"[{t}] 已在缓存中，跳过")
-            continue
         title = m.get("title", "")
-        text = (m.get("full_text") or m.get("text") or "")[:50]
-        print(f"[{t}] {title}: {text}")
-        cls = classify_with_retry(m)
-        if not cls:
-            print("  分类失败（重试后仍失败）")
+        text = (m.get("full_text") or m.get("text") or m.get("raw", ""))[:50]
+        # 已在缓存中（可能另一轮已补）则跳过
+        if t and any(str(r.get("time", "")) == str(t) for r in cache):
             continue
-        is_work = cls.get("is_work", False)
-        importance = cls.get("importance", "low")
-        needs_todo = cls.get("needs_todo", False)
-        category = cls.get("category", "闲聊")
-        summary = cls.get("summary", "")
-        tags = []
-        if is_work:
-            tags.append("💼工作")
-        if importance == "high":
-            tags.append("🔴重要")
-        elif importance == "medium":
-            tags.append("🟡一般")
-        if needs_todo:
-            tags.append("📌待办")
-        result = {
-            "time": t,
-            "source": m.get("title", ""),
-            "text": m.get("full_text") or m.get("text") or "",
-            "tags": tags,
-            "importance": importance,
-            "is_work": is_work,
-            "needs_todo": needs_todo,
-            "todo_text": cls.get("todo_text", ""),
-            "category": category,
-            "summary": summary,
-        }
-        cache.append(result)
-        print(f"  → {' '.join(tags)} {category}: {summary}")
-        time.sleep(1)
+        print(f"[{t}] {title}: {text}")
+        rule = cm.rule_classify(m)
+        cls = rule if rule else cm.classify_with_ai(m)
+        if not cls:
+            print("  分类失败，保留在失败队列（可用 --dry-run 只看不动）")
+            still_failed.append(m)
+            continue
+        result = cm.format_result(m, cls)
+        if not cm._cache_has(cache, result):
+            cache.append(result)
+        done += 1
+        tag = "规则" if rule else "AI"
+        print(f"  → [{tag}] {'💼' if result['is_work'] else ''}{'🔴' if result['importance']=='high' else ''}{'📌' if result['needs_todo'] else ''} {result['category']}: {result['summary']}")
+        time.sleep(0.5)
 
-    with open(r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward\.analysis_cache.json", "w", encoding="utf-8") as f:
-        json.dump(cache, f, ensure_ascii=False, indent=1)
-    print(f"\n缓存更新完成，共 {len(cache)} 条")
+    if dry_run:
+        print(f"\n(dry-run) 未写入任何文件。将补 {done} 条，仍失败 {len(still_failed)} 条")
+        return
+
+    if done == 0 and not still_failed:
+        print("\n没有新补分类（目标消息均已在缓存中）")
+        return
+
+    # 更新失败队列（仅保留仍失败的），写缓存，重建分析文件
+    save_failed(still_failed)
+    if cm.save_cache(cache):
+        print(f"\n缓存更新完成，共 {len(cache)} 条")
+    else:
+        print("\n严重: 缓存保存失败")
+    out = cm.write_analysis(cache)
+    print(f"分析文件已重建: {out}")
 
 
 if __name__ == "__main__":

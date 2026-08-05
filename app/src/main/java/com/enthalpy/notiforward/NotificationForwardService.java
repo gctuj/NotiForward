@@ -27,7 +27,8 @@ import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -52,7 +53,10 @@ public class NotificationForwardService extends NotificationListenerService {
     private BlockListManager blockList;
     private QueueManager queueManager;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final Set<String> recentKeys = new HashSet<>();
+    /** 去重窗口：LinkedHashSet 保持插入序，超限时移除最旧（原实现 size>200 整表 clear，窗口内会重复转发） */
+    private final Set<String> recentKeys = new LinkedHashSet<>();
+    private static final int MAX_RECENT_KEYS = 200;
+    private static final long WAKE_LOCK_TIMEOUT_MS = 10 * 60 * 1000L; // WakeLock 上限 10 分钟，收到通知时续期
     private PowerManager.WakeLock wakeLock;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
@@ -80,7 +84,13 @@ public class NotificationForwardService extends NotificationListenerService {
         prefs = getSharedPreferences("notiforward", MODE_PRIVATE);
         blockList = new BlockListManager(this);
         queueManager = new QueueManager(this);
-        startForeground(FOREGROUND_ID, buildKeepAliveNotification());
+        try {
+            startForeground(FOREGROUND_ID, buildKeepAliveNotification());
+        } catch (Exception e) {
+            // 国内 ROM / Android 12+ 限制下可能抛 ForegroundServiceStartNotAllowedException，
+            // 降级为普通运行（NLS 由系统绑定，仍能收到通知），避免 onCreate 崩溃循环
+            Log.e(TAG, "startForeground failed, running without foreground", e);
+        }
         acquireWakeLock();
         handler.postDelayed(queueFlusher, QUEUE_FLUSH_INTERVAL);
     }
@@ -126,13 +136,14 @@ public class NotificationForwardService extends NotificationListenerService {
                 .build();
     }
 
-    /** 获取 WakeLock，防止 CPU 休眠导致监听中断 */
+    /** 获取 WakeLock（限时 10 分钟）。NLS 由系统唤醒投递通知，WakeLock 仅作保活补充：
+     *  不再永久持有（原实现是最大耗电点）；收到通知时在 handleNotification 里续期 */
     private void acquireWakeLock() {
         try {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "NotiForward:keepalive");
-            wakeLock.acquire();
-            Log.i(TAG, "WakeLock acquired");
+            wakeLock.acquire(WAKE_LOCK_TIMEOUT_MS);
+            Log.i(TAG, "WakeLock acquired (timeout 10min)");
         } catch (Exception e) {
             Log.e(TAG, "WakeLock error", e);
         }
@@ -225,14 +236,14 @@ public class NotificationForwardService extends NotificationListenerService {
             return;
         }
 
-        // 去重
+        // 去重窗口（LRU：超限时移除最旧，原实现整表 clear）
         String dedupKey = packageName + "|" + title + "|" + fullText + "|" + inboxLines.toString();
         synchronized (recentKeys) {
             if (recentKeys.contains(dedupKey)) return;
             recentKeys.add(dedupKey);
-            if (recentKeys.size() > 200) {
-                recentKeys.clear();
-                recentKeys.add(dedupKey);
+            while (recentKeys.size() > MAX_RECENT_KEYS) {
+                Iterator<String> it = recentKeys.iterator();
+                if (it.hasNext()) it.remove();
             }
         }
 
@@ -292,12 +303,24 @@ public class NotificationForwardService extends NotificationListenerService {
 
         final String payload = json.toString();
         String topic = prefs.getString("topic", "");
-        if (topic.isEmpty()) return;
+        if (topic.isEmpty()) {
+            // 未配置 topic：所有通知静默丢失，必须告警（原实现静默 return）
+            Log.w(TAG, "topic 未配置，通知未转发。请打开 App 主界面查看频道号");
+            return;
+        }
 
         Log.i(TAG, "Forwarding: " + title + " | " + fullText
                 + " | lines=" + inboxLines.size());
 
         executor.execute(() -> sendWithQueue(topic, payload));
+
+        // 收到通知 = 系统已唤醒进程，续期 WakeLock
+        if (wakeLock != null && !wakeLock.isHeld()) {
+            try {
+                wakeLock.acquire(WAKE_LOCK_TIMEOUT_MS);
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     /** 发送消息：失败进队列，由定时任务补发（防漏） */
@@ -315,6 +338,7 @@ public class NotificationForwardService extends NotificationListenerService {
 
     public static boolean sendToNtfy(String topic, String message) {
         HttpURLConnection conn = null;
+        OutputStream os = null;
         try {
             URL url = new URL(NTFY_BASE + "/" + topic);
             conn = (HttpURLConnection) url.openConnection();
@@ -323,10 +347,9 @@ public class NotificationForwardService extends NotificationListenerService {
             conn.setDoOutput(true);
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(10000);
-            OutputStream os = conn.getOutputStream();
+            os = conn.getOutputStream();
             os.write(message.getBytes(StandardCharsets.UTF_8));
             os.flush();
-            os.close();
             int code = conn.getResponseCode();
             Log.i(TAG, "ntfy response: " + code);
             return code >= 200 && code < 300;
@@ -334,6 +357,12 @@ public class NotificationForwardService extends NotificationListenerService {
             Log.e(TAG, "sendToNtfy error", e);
             return false;
         } finally {
+            if (os != null) {
+                try {
+                    os.close();
+                } catch (Exception ignored) {
+                }
+            }
             if (conn != null) {
                 conn.disconnect();
             }

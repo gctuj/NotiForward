@@ -19,6 +19,7 @@ OUTPUT_DIR = Path(r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward\analysis")
 # ===== 状态文件 =====
 STATE_FILE = Path(r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward\.classified_count")
 CACHE_FILE = Path(r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward\.analysis_cache.json")  # 已分类结果缓存，防止覆盖历史
+FAILED_FILE = Path(r"C:\Users\enthalpy\WorkBuddy\Claw\notiforward\failed_classify.jsonl")  # 分类失败的消息，供 fix_missing.py 补分类
 LOCK_PORT = 8897  # 单实例锁端口，防止多个分类器同时运行
 
 # ===== AI 配置（默认 DeepSeek；任何 OpenAI 兼容接口都可用） =====
@@ -52,7 +53,6 @@ AI_MODEL = _cfg_val("AI_MODEL", _LOCAL, "model", default="deepseek-v4-flash")
 AI_KEY = _cfg_val("DEEPSEEK_API_KEY", _LOCAL, "api_key", "deepseek_api_key")
 if not AI_KEY:
     print("⚠ 未配置 API Key：设置环境变量 DEEPSEEK_API_KEY，或 config.local.json 的 api_key 字段（任意 OpenAI 兼容服务的 Key 均可）")
-
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -161,16 +161,39 @@ def load_cache():
 
 
 def save_cache(results):
-    """保存全部分类结果到缓存，带重试"""
+    """保存全部分类结果到缓存：临时文件 + 原子替换，防崩溃写坏整个缓存。
+    失败时返回 False，调用方应提示（否则下次重分类可能产生重复条目）"""
+    tmp = CACHE_FILE.with_suffix(".tmp")
     for attempt in range(3):
         try:
-            CACHE_FILE.write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
+            tmp.write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
+            os.replace(tmp, CACHE_FILE)
             return True
         except Exception as e:
             if attempt < 2:
                 time.sleep(1)
             else:
                 print(f"  警告: 缓存保存失败: {e}")
+    return False
+
+
+def _cache_has(cache, result):
+    """缓存查重：同 time + source + text 视为已分类（防崩溃/重试后整批重分类产生重复条目）"""
+    for r in cache:
+        if (r.get("time") == result.get("time")
+                and r.get("source") == result.get("source")
+                and r.get("text") == result.get("text")):
+            return True
+    return False
+
+
+def _record_failed(msg):
+    """分类失败的消息追加到失败队列，供 fix_missing.py 补分类（按 time 去重）"""
+    try:
+        with open(FAILED_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(msg, ensure_ascii=False) + "\n")
+    except OSError as e:
+        print(f"  警告: 失败消息记录失败: {e}")
 
 
 def get_all_messages():
@@ -190,12 +213,13 @@ def get_all_messages():
 
 
 def filter_new(all_msgs, cursor):
-    """按时间游标筛选新消息（消息 time 字符串大于游标视为新）
-    cursor 为空时全部视为新消息。相比旧版"已分类条数"索引方案，
+    """按时间游标筛选新消息（消息 time 字符串大于游标视为新）。
+    cursor 为空时全部视为新消息；无 time 字段的消息也视为新（避免被永久跳过），
+    由调用方补时间戳后正常处理。相比旧版"已分类条数"索引方案，
     游标方案在清理脚本删除旧文件后不会错位。"""
     if not cursor:
         return list(all_msgs)
-    return [m for m in all_msgs if str(m.get("time", "")) > cursor]
+    return [m for m in all_msgs if not m.get("time") or str(m.get("time", "")) > cursor]
 
 
 def migrate_cursor_from_cache(cache):
@@ -231,7 +255,10 @@ def save_cursor(cursor):
 
 
 def classify_with_ai(msg):
-    """调用 AI（智谱 GLM）分类单条消息"""
+    """调用 AI 分类单条消息。未配置 key 时直接返回 None，不发空认证请求拖慢全批"""
+    if not AI_KEY:
+        print("  跳过 AI：未配置 API Key（规则层未命中时无法分类）")
+        return None
     title = msg.get("title", "")
     text = msg.get("full_text") or msg.get("text") or msg.get("raw", "")
     content = f"消息来源(群名或联系人): {title}\n消息内容: {text}"
@@ -406,20 +433,27 @@ def main():
         title = msg.get("title", "")
         text = (msg.get("full_text") or msg.get("text") or msg.get("raw", ""))[:50]
         print(f"[{i+1}/{len(new_msgs)}] {title}: {text}")
-        classification = classify_with_ai(msg)
+        if not msg.get("time"):
+            msg["time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"  ⚠ 消息缺少 time 字段，已补当前时间戳（App 异常情况）")
+        classification = classify_msg(msg)  # 规则层优先，与 watch 模式行为一致
         if classification:
             result = format_result(msg, classification)
             results.append(result)
-            cache.append(result)
+            if not _cache_has(cache, result):
+                cache.append(result)
             print(f"  → {'💼' if result['is_work'] else ''}{'🔴' if result['importance']=='high' else ''}{'📌' if result['needs_todo'] else ''} {result['category']}: {result['summary']}")
         else:
             results.append(None)
+            _record_failed(msg)  # 记入失败队列，fix_missing.py 可补
         time.sleep(0.5)  # 避免触发限流
 
     # 保存进度（时间游标）和缓存
-    last_time = max(str(m.get("time", "")) for m in new_msgs)
-    save_cursor(last_time)
-    save_cache(cache)
+    last_time = max((str(m.get("time", "")) for m in new_msgs), default="")
+    if not save_cursor(last_time):
+        print("  严重: 进度游标保存失败，下次将重新处理本批（缓存已去重，不会重复）")
+    if not save_cache(cache):
+        print("  严重: 缓存保存失败，历史摘要可能缺失")
 
     if results:
         out_file = write_analysis(cache)
@@ -466,17 +500,30 @@ def watch():
                         title = msg.get("title", "")
                         text = (msg.get("full_text") or msg.get("text") or msg.get("raw", ""))[:50]
                         print(f"[{i+1}/{len(new_msgs)}] {title}: {text}")
-                        classification = classify_msg(msg)
+                        if not msg.get("time"):
+                            msg["time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            print(f"  ⚠ 消息缺少 time 字段，已补当前时间戳（App 异常情况）")
+                        rule_result = rule_classify(msg)
+                        if rule_result:
+                            classification = rule_result
+                            tag = "规则"
+                        else:
+                            classification = classify_with_ai(msg)
+                            tag = "AI"
                         if classification:
                             result = format_result(msg, classification)
-                            cache.append(result)
-                            tag = "规则" if rule_classify(msg) else "AI"
+                            if not _cache_has(cache, result):
+                                cache.append(result)
                             print(f"  → [{tag}] {'💼' if result['is_work'] else ''}{'🔴' if result['importance']=='high' else ''}{'📌' if result['needs_todo'] else ''} {result['category']}: {result['summary']}")
+                        else:
+                            _record_failed(msg)  # 记入失败队列，fix_missing.py 可补
                         time.sleep(0.3)
 
-                    last_time = max(str(m.get("time", "")) for m in new_msgs)
-                    save_cursor(last_time)
-                    save_cache(cache)
+                    last_time = max((str(m.get("time", "")) for m in new_msgs), default="")
+                    if not save_cursor(last_time):
+                        print(f"[{now()}] 严重: 进度游标保存失败，下次将重新处理本批（缓存已去重，不会重复）")
+                    if not save_cache(cache):
+                        print(f"[{now()}] 严重: 缓存保存失败，历史摘要可能缺失")
                     out_file = write_analysis(cache)
                     print(f"分类完成！结果已保存: {out_file}")
         except Exception as e:

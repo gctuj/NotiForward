@@ -24,6 +24,7 @@ state/
 .last_msg_id
 .progress
 qq_chat_history.json
+failed_classify.jsonl
 
 # ===== 密钥与本地配置（勿上传）=====
 config.local.json

@@ -26,16 +26,28 @@ def short_time(t):
         return t
 
 
-def build_summary():
+def build_summary(date_str=None):
+    """生成摘要。date_str 为 None/今天时标题用「今日」，否则按指定日期过滤并显示日期。
+    修复：原版遍历整个缓存，标题写"今日"却混入历史消息。"""
     cache = load_cache()
     if not cache:
         return f"{TITLE}暂无记录"
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    if date_str:
+        cache = [r for r in cache if str(r.get("time", "")).startswith(date_str)]
+        if not cache:
+            return f"【{date_str} 微信重要消息】\n当天暂无记录"
+
+    title = TITLE if (date_str is None or date_str == today) else f"【{date_str} 微信重要消息】"
+    if not cache:
+        return f"{title}\n暂无记录"
 
     todos = [r for r in cache if r.get("needs_todo") and r.get("todo_text")]
     highs = [r for r in cache if r.get("importance") == "high"]
     mediums = [r for r in cache if r.get("importance") == "medium"]
 
-    lines = [TITLE]
+    lines = [title]
     shown = set()
 
     # 1. 待办（同一来源 5 分钟内的重要消息自动并入待办详情）
@@ -97,4 +109,10 @@ def build_summary():
 
 
 if __name__ == "__main__":
-    print(build_summary())
+    import argparse
+    ap = argparse.ArgumentParser(description="生成微信消息摘要（默认今日）")
+    ap.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"),
+                    help="按日期过滤，如 2026-08-05（默认今天）")
+    ap.add_argument("--all", action="store_true", help="不过滤日期，显示整个缓存")
+    args = ap.parse_args()
+    print(build_summary(None if args.all else args.date))

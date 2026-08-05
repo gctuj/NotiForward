@@ -1,6 +1,7 @@
 package com.enthalpy.notiforward;
 
 import android.app.Activity;
+import android.app.NotificationManager;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -68,6 +69,14 @@ public class MainActivity extends Activity {
         // 恢复仅微信开关状态（默认 true = 仅微信，与旧版行为一致）
         switchWeChatOnly.setChecked(prefs.getBoolean("wechat_only", true));
 
+        // Android 13+ 通知运行时权限：不授权则前台保活通知不显示，用户无法感知服务状态
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (!nm.areNotificationsEnabled()) {
+                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 100);
+            }
+        }
+
         btnToggleAccess.setOnClickListener(v -> {
             if (isNotificationListenerEnabled()) {
                 txtStatus.setText("通知权限已开启");
@@ -107,6 +116,13 @@ public class MainActivity extends Activity {
 
         updateStatus();
         handler.postDelayed(this::updateStatus, 1000);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // 移除延迟回调，避免销毁后仍触碰已 detach 的 View
+        handler.removeCallbacksAndMessages(null);
     }
 
     private void saveSettings() {
