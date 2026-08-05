@@ -110,7 +110,7 @@ powershell -ExecutionPolicy Bypass -File build_apk.ps1
 
 首次安装与配置（按顺序）：
 
-1. **安装 APK**：传到手机安装（QQ/微信文件助手、USB、`adb install -r` 均可）
+1. **安装 APK**
 2. **授予通知使用权**：打开 App → 点「开启通知权限」→ 系统设置中开启 NotiForward 的通知使用权（部分国产 ROM 需重启手机后生效）
 3. **防后台被杀**：点「设置电池优化」加入白名单
 4. **记下你的频道号**：打开 App 主界面，会看到一个**频道名（ntfy topic）**，形如 `notiforward-xxxxxx`——**这是手机和电脑之间的"门牌号"，记下来**
